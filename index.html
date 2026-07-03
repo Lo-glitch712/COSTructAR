@@ -308,378 +308,387 @@
     </div>
 
     <script>
-      // =====================
-      // VARIABLES
-      // =====================
-      let phoneHeight = 120; // cm, default
-      let alpha = 0, beta = 0, gamma = 0;
-      let points = []; // { x, y, worldX, worldZ, label }
-      let canvas, ctx;
-      let gyroAvailable = false;
-      let started = false;
+     // =====================
+// VARIABLES
+// =====================
+let phoneHeight = 120; // cm, default
+let alpha = 0, beta = 0, gamma = 0;
+let points = []; // { baseScreenX, baseScreenY, screenX, screenY, baseAlpha, baseBeta, worldX, worldZ, label }
+let canvas, ctx;
+let gyroAvailable = false;
+let started = false;
 
-      const statusBar = document.getElementById('status-bar');
-      const measurementBox = document.getElementById('measurement-box');
-      const distanceDisplay = document.getElementById('distance-display');
-      const areaDisplay = document.getElementById('area-display');
-      const segmentList = document.getElementById('segment-list');
-      const btnArea = document.getElementById('btn-area');
-      const gyroInfo = document.getElementById('gyro-info');
+// pixels-per-degree, based on assumed camera FOV (adjust if measurements feel off)
+const FOV_H = 60; // horizontal field of view in degrees
+const FOV_V = 45; // vertical field of view in degrees
 
-      // =====================
-      // PRESET
-      // =====================
-      function setPreset(val) {
-        document.getElementById('ref-height-input').value = val;
+const statusBar = document.getElementById('status-bar');
+const measurementBox = document.getElementById('measurement-box');
+const distanceDisplay = document.getElementById('distance-display');
+const areaDisplay = document.getElementById('area-display');
+const segmentList = document.getElementById('segment-list');
+const btnArea = document.getElementById('btn-area');
+const gyroInfo = document.getElementById('gyro-info');
+
+// =====================
+// PRESET
+// =====================
+function setPreset(val) {
+  document.getElementById('ref-height-input').value = val;
+}
+
+// =====================
+// START
+// =====================
+async function startMeasurement() {
+  phoneHeight = parseFloat(document.getElementById('ref-height-input').value) || 120;
+  document.getElementById('ref-screen').style.display = 'none';
+
+  await startCamera();
+  setupCanvas();
+
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    document.getElementById('permission-btn').style.display = 'block';
+  } else {
+    startGyro();
+  }
+
+  started = true;
+  statusBar.textContent = 'Move phone to measure. Tap Place to set points.';
+
+  requestAnimationFrame(renderLoop);
+}
+
+// =====================
+// IOS PERMISSION
+// =====================
+async function requestGyroPermission() {
+  try {
+    const permission = await DeviceOrientationEvent.requestPermission();
+    if (permission === 'granted') {
+      startGyro();
+      document.getElementById('permission-btn').style.display = 'none';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// =====================
+// CAMERA
+// =====================
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       }
+    });
+    document.getElementById('camera-feed').srcObject = stream;
+  } catch (e) {
+    statusBar.textContent = 'Camera error: ' + e.message;
+  }
+}
 
-      // =====================
-      // START
-      // =====================
-      async function startMeasurement() {
-        phoneHeight = parseFloat(document.getElementById('ref-height-input').value) || 120;
-        document.getElementById('ref-screen').style.display = 'none';
+// =====================
+// CANVAS SETUP
+// =====================
+function setupCanvas() {
+  canvas = document.getElementById('canvas-overlay');
+  ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-        // Start camera
-        await startCamera();
+  window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  });
+}
 
-        // Setup canvas
-        setupCanvas();
+// =====================
+// GYROSCOPE
+// =====================
+function startGyro() {
+  window.addEventListener('deviceorientation', (e) => {
+    alpha = e.alpha || 0;
+    beta = e.beta || 0;
+    gamma = e.gamma || 0;
 
-        // Request gyro
-        if (typeof DeviceOrientationEvent !== 'undefined' && 
-            typeof DeviceOrientationEvent.requestPermission === 'function') {
-          // iOS 13+
-          document.getElementById('permission-btn').style.display = 'block';
-        } else {
-          // Android
-          startGyro();
-        }
+    gyroInfo.textContent = `α:${Math.round(alpha)}° β:${Math.round(beta)}° γ:${Math.round(gamma)}°`;
+    gyroAvailable = true;
+  });
+}
 
-        started = true;
-        statusBar.textContent = 'Move phone to measure. Tap Place to set points.';
-      }
+// shortest signed difference between two angles (handles 0/360 wraparound)
+function angleDiff(a, b) {
+  let d = a - b;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
 
-      // =====================
-      // IOS PERMISSION
-      // =====================
-      async function requestGyroPermission() {
-        try {
-          const permission = await DeviceOrientationEvent.requestPermission();
-          if (permission === 'granted') {
-            startGyro();
-            document.getElementById('permission-btn').style.display = 'none';
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
+// =====================
+// COMPUTE WORLD POSITION (for actual cm measurements)
+// =====================
+function getWorldPosition() {
+  const betaRad = beta * Math.PI / 180;
+  const alphaRad = alpha * Math.PI / 180;
 
-      // =====================
-      // CAMERA
-      // =====================
-      async function startCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-              facingMode: 'environment',
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            }
-          });
-          document.getElementById('camera-feed').srcObject = stream;
-        } catch (e) {
-          statusBar.textContent = 'Camera error: ' + e.message;
-        }
-      }
+  let distance;
+  if (Math.abs(beta) > 10) {
+    distance = phoneHeight / Math.sin(Math.abs(betaRad));
+    distance = Math.min(distance, 1000);
+  } else {
+    distance = phoneHeight;
+  }
 
-      // =====================
-      // CANVAS SETUP
-      // =====================
-      function setupCanvas() {
-        canvas = document.getElementById('canvas-overlay');
-        ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+  const worldX = distance * Math.sin(alphaRad);
+  const worldZ = distance * Math.cos(alphaRad);
 
-        window.addEventListener('resize', () => {
-          canvas.width = window.innerWidth;
-          canvas.height = window.innerHeight;
-          redrawCanvas();
-        });
-      }
+  return { distance, worldX, worldZ, beta };
+}
 
-      // =====================
-      // GYROSCOPE
-      // =====================
-      function startGyro() {
-        window.addEventListener('deviceorientation', (e) => {
-          alpha = e.alpha || 0; // Z axis rotation (compass)
-          beta = e.beta || 0;   // X axis (front-back tilt)
-          gamma = e.gamma || 0; // Y axis (left-right tilt)
+// =====================
+// PLACE POINT
+// =====================
+function placePoint() {
+  if (!started) return;
 
-          gyroInfo.textContent = `α:${Math.round(alpha)}° β:${Math.round(beta)}° γ:${Math.round(gamma)}°`;
-          gyroAvailable = true;
-        });
-      }
+  const screenX = window.innerWidth / 2;
+  const screenY = window.innerHeight / 2;
 
-      // =====================
-      // COMPUTE WORLD POSITION
-      // =====================
-      function getWorldPosition() {
-        // Convert gyro angles to radians
-        const betaRad = beta * Math.PI / 180;
-        const alphaRad = alpha * Math.PI / 180;
+  let worldPos;
+  if (gyroAvailable) {
+    worldPos = getWorldPosition();
+  } else {
+    worldPos = { distance: phoneHeight, worldX: points.length * 50, worldZ: 0, beta: 45 };
+    statusBar.textContent = '⚠️ No gyro detected. Using fallback mode.';
+  }
 
-        // Distance from phone to floor based on tilt angle
-        // When phone is pointing down (beta = 90), distance = phone height
-        // When phone is pointing forward (beta = 0), distance = infinity
-        
-        let distance;
-        
-        if (Math.abs(beta) > 10) {
-          // Floor measurement
-          distance = phoneHeight / Math.sin(Math.abs(betaRad));
-          distance = Math.min(distance, 1000); // cap at 10 meters
-        } else {
-          // Wall measurement - use fixed estimated distance
-          distance = phoneHeight;
-        }
+  const label = String.fromCharCode(65 + points.length);
 
-        // Convert to X, Z world coordinates using compass heading
-        const worldX = distance * Math.sin(alphaRad);
-        const worldZ = distance * Math.cos(alphaRad);
+  points.push({
+    baseScreenX: screenX,
+    baseScreenY: screenY,
+    screenX: screenX,
+    screenY: screenY,
+    baseAlpha: alpha,
+    baseBeta: beta,
+    worldX: worldPos.worldX,
+    worldZ: worldPos.worldZ,
+    distance: worldPos.distance,
+    label: label
+  });
 
-        return { 
-          distance: distance,
-          worldX: worldX, 
-          worldZ: worldZ,
-          beta: beta
-        };
-      }
+  if (points.length >= 2) {
+    computeDistances();
+    measurementBox.style.display = 'block';
+  }
+  if (points.length >= 3) {
+    btnArea.style.display = 'block';
+  }
 
-      // =====================
-      // PLACE POINT
-      // =====================
-      function placePoint() {
-        if (!started) return;
+  statusBar.textContent = `Point ${label} placed. Distance: ${worldPos.distance.toFixed(0)}cm`;
+}
 
-        const screenX = window.innerWidth / 2;
-        const screenY = window.innerHeight / 2;
+// =====================
+// UPDATE ANCHORED SCREEN POSITIONS (fake-anchoring based on gyro delta)
+// =====================
+function updatePointScreenPositions() {
+  const pxPerDegX = window.innerWidth / FOV_H;
+  const pxPerDegY = window.innerHeight / FOV_V;
 
-        let worldPos;
+  points.forEach(p => {
+    const dAlpha = angleDiff(alpha, p.baseAlpha);
+    const dBeta = beta - p.baseBeta;
 
-        if (gyroAvailable) {
-          worldPos = getWorldPosition();
-        } else {
-          // Fallback if no gyro
-          worldPos = {
-            distance: phoneHeight,
-            worldX: points.length * 50,
-            worldZ: 0,
-            beta: 45
-          };
-          statusBar.textContent = '⚠️ No gyro detected. Using fallback mode.';
-        }
+    // rotating view right (alpha increasing) shifts anchored points left
+    p.screenX = p.baseScreenX - dAlpha * pxPerDegX;
+    // tilting down (beta increasing) shifts anchored points up
+    p.screenY = p.baseScreenY - dBeta * pxPerDegY;
+  });
+}
 
-        const label = String.fromCharCode(65 + points.length);
+// =====================
+// RENDER LOOP (runs every frame so anchored points + live line update smoothly)
+// =====================
+function renderLoop() {
+  if (gyroAvailable) updatePointScreenPositions();
+  redrawCanvas();
+  requestAnimationFrame(renderLoop);
+}
 
-        points.push({
-          screenX: screenX,
-          screenY: screenY,
-          worldX: worldPos.worldX,
-          worldZ: worldPos.worldZ,
-          distance: worldPos.distance,
-          label: label
-        });
+// =====================
+// REDRAW CANVAS
+// =====================
+function redrawCanvas() {
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        redrawCanvas();
+  // dashed lines connecting placed points
+  if (points.length >= 2) {
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 5]);
+    ctx.beginPath();
+    ctx.moveTo(points[0].screenX, points[0].screenY);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].screenX, points[i].screenY);
+    }
+    ctx.stroke();
+  }
 
-        if (points.length >= 2) {
-          computeDistances();
-          measurementBox.style.display = 'block';
-        }
+  // LIVE rubber-band line from last placed point to current crosshair (center)
+  if (points.length >= 1) {
+    const last = points[points.length - 1];
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(last.screenX, last.screenY);
+    ctx.lineTo(window.innerWidth / 2, window.innerHeight / 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
 
-        if (points.length >= 3) {
-          btnArea.style.display = 'block';
-        }
+  // points
+  points.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.screenX, p.screenY, 14, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
+    ctx.fill();
 
-        statusBar.textContent = `Point ${label} placed. Distance: ${worldPos.distance.toFixed(0)}cm`;
-      }
+    ctx.beginPath();
+    ctx.arc(p.screenX, p.screenY, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#4CAF50';
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-      // =====================
-      // REDRAW CANVAS
-      // =====================
-      function redrawCanvas() {
-        if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.label, p.screenX, p.screenY - 18);
+  });
 
-        // Draw lines between points
-        if (points.length >= 2) {
-          ctx.strokeStyle = '#FFD700';
-          ctx.lineWidth = 3;
-          ctx.setLineDash([10, 5]);
-          ctx.beginPath();
-          ctx.moveTo(points[0].screenX, points[0].screenY);
-          for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].screenX, points[i].screenY);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+  // distance labels per segment
+  if (points.length >= 2) {
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const dx = p2.worldX - p1.worldX;
+      const dz = p2.worldZ - p1.worldZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Draw points
-        points.forEach((p, i) => {
-          // Outer ring
-          ctx.beginPath();
-          ctx.arc(p.screenX, p.screenY, 14, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
-          ctx.fill();
+      const midX = (p1.screenX + p2.screenX) / 2;
+      const midY = (p1.screenY + p2.screenY) / 2;
 
-          // Inner dot
-          ctx.beginPath();
-          ctx.arc(p.screenX, p.screenY, 8, 0, Math.PI * 2);
-          ctx.fillStyle = '#4CAF50';
-          ctx.fill();
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 2;
-          ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.beginPath();
+      ctx.roundRect(midX - 35, midY - 12, 70, 24, 5);
+      ctx.fill();
 
-          // Label
-          ctx.fillStyle = 'white';
-          ctx.font = 'bold 14px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText(p.label, p.screenX, p.screenY - 18);
-        });
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${dist.toFixed(1)}cm`, midX, midY + 4);
+    }
+  }
+}
 
-        // Draw distance labels on lines
-        if (points.length >= 2) {
-          const scale = 1; // 1cm = 1cm
-          for (let i = 0; i < points.length - 1; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
+// =====================
+// COMPUTE DISTANCES
+// =====================
+function computeDistances() {
+  if (points.length < 2) return;
 
-            const dx = p2.worldX - p1.worldX;
-            const dz = p2.worldZ - p1.worldZ;
-            const dist = Math.sqrt(dx*dx + dz*dz);
+  let totalCm = 0;
+  let segments = '';
 
-            const midX = (p1.screenX + p2.screenX) / 2;
-            const midY = (p1.screenY + p2.screenY) / 2;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const dx = p2.worldX - p1.worldX;
+    const dz = p2.worldZ - p1.worldZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    totalCm += dist;
 
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.beginPath();
-            ctx.roundRect(midX - 35, midY - 12, 70, 24, 5);
-            ctx.fill();
+    segments += `${p1.label}→${p2.label}: ${dist.toFixed(1)}cm (${(dist / 100).toFixed(2)}m)\n`;
+  }
 
-            ctx.fillStyle = '#FFD700';
-            ctx.font = 'bold 12px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(`${dist.toFixed(1)}cm`, midX, midY + 4);
-          }
-        }
-      }
+  if (points.length === 2) {
+    const p1 = points[0], p2 = points[1];
+    const dx = p2.worldX - p1.worldX;
+    const dz = p2.worldZ - p1.worldZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
 
-      // =====================
-      // COMPUTE DISTANCES
-      // =====================
-      function computeDistances() {
-        if (points.length < 2) return;
+    distanceDisplay.innerHTML = `${dist.toFixed(1)} cm<br><small style="font-size:16px">${(dist / 100).toFixed(2)} m</small>`;
+  } else {
+    distanceDisplay.innerHTML = `Total: ${totalCm.toFixed(1)} cm<br><small style="font-size:16px">${(totalCm / 100).toFixed(2)} m</small>`;
+  }
 
-        let totalCm = 0;
-        let segments = '';
+  segmentList.textContent = segments;
+  areaDisplay.textContent = '';
+}
 
-        for (let i = 0; i < points.length - 1; i++) {
-          const p1 = points[i];
-          const p2 = points[i + 1];
-          const dx = p2.worldX - p1.worldX;
-          const dz = p2.worldZ - p1.worldZ;
-          const dist = Math.sqrt(dx*dx + dz*dz);
-          totalCm += dist;
+// =====================
+// COMPUTE AREA
+// =====================
+function computeArea() {
+  if (points.length < 3) return;
 
-          const labelA = points[i].label;
-          const labelB = points[i+1].label;
-          segments += `${labelA}→${labelB}: ${dist.toFixed(1)}cm (${(dist/100).toFixed(2)}m)\n`;
-        }
+  let area = 0;
+  const n = points.length;
 
-        if (points.length === 2) {
-          const p1 = points[0];
-          const p2 = points[1];
-          const dx = p2.worldX - p1.worldX;
-          const dz = p2.worldZ - p1.worldZ;
-          const dist = Math.sqrt(dx*dx + dz*dz);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += points[i].worldX * points[j].worldZ;
+    area -= points[j].worldX * points[i].worldZ;
+  }
 
-          distanceDisplay.innerHTML = `
-            ${dist.toFixed(1)} cm
-            <br><small style="font-size:16px">${(dist/100).toFixed(2)} m</small>
-          `;
-        } else {
-          distanceDisplay.innerHTML = `
-            Total: ${totalCm.toFixed(1)} cm
-            <br><small style="font-size:16px">${(totalCm/100).toFixed(2)} m</small>
-          `;
-        }
+  area = Math.abs(area) / 2;
+  const areaM2 = (area / 10000).toFixed(2);
 
-        segmentList.textContent = segments;
-        areaDisplay.textContent = '';
-      }
+  areaDisplay.textContent = `Area: ${area.toFixed(1)} cm² | ${areaM2} m²`;
+  statusBar.textContent = `Area: ${areaM2} m²`;
+}
 
-      // =====================
-      // COMPUTE AREA
-      // =====================
-      function computeArea() {
-        if (points.length < 3) return;
+// =====================
+// UNDO
+// =====================
+function undoPoint() {
+  if (points.length === 0) return;
+  points.pop();
 
-        let area = 0;
-        const n = points.length;
+  if (points.length < 2) {
+    measurementBox.style.display = 'none';
+  } else {
+    computeDistances();
+  }
+  if (points.length < 3) {
+    btnArea.style.display = 'none';
+    areaDisplay.textContent = '';
+  }
 
-        for (let i = 0; i < n; i++) {
-          const j = (i + 1) % n;
-          area += points[i].worldX * points[j].worldZ;
-          area -= points[j].worldX * points[i].worldZ;
-        }
+  statusBar.textContent = `Undo. ${points.length} point(s) remaining.`;
+}
 
-        area = Math.abs(area) / 2;
-        const areaM2 = (area / 10000).toFixed(2);
-
-        areaDisplay.textContent = `Area: ${area.toFixed(1)} cm² | ${areaM2} m²`;
-        statusBar.textContent = `Area: ${areaM2} m²`;
-      }
-
-      // =====================
-      // UNDO
-      // =====================
-      function undoPoint() {
-        if (points.length === 0) return;
-        points.pop();
-        redrawCanvas();
-
-        if (points.length < 2) {
-          measurementBox.style.display = 'none';
-        } else {
-          computeDistances();
-        }
-
-        if (points.length < 3) {
-          btnArea.style.display = 'none';
-          areaDisplay.textContent = '';
-        }
-
-        statusBar.textContent = `Undo. ${points.length} point(s) remaining.`;
-      }
-
-      // =====================
-      // CLEAR
-      // =====================
-      function clearAll() {
-        points = [];
-        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-        measurementBox.style.display = 'none';
-        btnArea.style.display = 'none';
-        areaDisplay.textContent = '';
-        distanceDisplay.textContent = '--';
-        segmentList.textContent = '';
-        statusBar.textContent = 'Cleared. Place new points.';
-      }
+// =====================
+// CLEAR
+// =====================
+function clearAll() {
+  points = [];
+  measurementBox.style.display = 'none';
+  btnArea.style.display = 'none';
+  areaDisplay.textContent = '';
+  distanceDisplay.textContent = '--';
+  segmentList.textContent = '';
+  statusBar.textContent = 'Cleared. Place new points.';
+}
     </script>
 
   </body>
