@@ -2,91 +2,253 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>COSTruct AR - Measurement</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <style>
-      #measurement-display {
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body { overflow: hidden; font-family: Arial, sans-serif; }
+
+      #ui-overlay {
         position: fixed;
-        bottom: 30px;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 999;
+      }
+
+      #status-bar {
+        position: fixed;
+        top: 15px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0,0,0,0.75);
         color: white;
-        padding: 15px 25px;
-        border-radius: 10px;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-size: 14px;
+        text-align: center;
+        z-index: 1000;
+        width: 90%;
+        max-width: 400px;
+      }
+
+      #measurement-box {
+        position: fixed;
+        bottom: 120px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.75);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 15px;
+        font-size: 16px;
+        text-align: center;
+        z-index: 1000;
+        width: 90%;
+        max-width: 400px;
+        display: none;
+      }
+
+      #measurement-box .distance {
+        font-size: 28px;
+        font-weight: bold;
+        color: #4CAF50;
+      }
+
+      #measurement-box .area {
         font-size: 20px;
-        font-family: Arial, sans-serif;
-        z-index: 999;
+        color: #2196F3;
+        margin-top: 5px;
+      }
+
+      #button-container {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        z-index: 1000;
+        pointer-events: all;
+        width: 90%;
+        max-width: 400px;
+        justify-content: center;
+      }
+
+      .btn {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 25px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        flex: 1;
+      }
+
+      #btn-place { background: #4CAF50; color: white; }
+      #btn-undo { background: #FF9800; color: white; }
+      #btn-clear { background: #f44336; color: white; }
+      #btn-area { background: #2196F3; color: white; display: none; }
+
+      #points-list {
+        position: fixed;
+        top: 70px;
+        right: 10px;
+        background: rgba(0,0,0,0.75);
+        color: white;
+        padding: 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        z-index: 1000;
+        max-width: 150px;
+        display: none;
+      }
+
+      #crosshair {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 30px;
+        height: 30px;
+        z-index: 1000;
+        pointer-events: none;
+      }
+
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        background: white;
+      }
+
+      #crosshair::before {
+        width: 2px;
+        height: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      #crosshair::after {
+        width: 100%;
+        height: 2px;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      #ref-input {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        z-index: 2000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        padding: 30px;
         text-align: center;
       }
 
-      #status-display {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 10px 20px;
+      #ref-input h2 { margin-bottom: 15px; font-size: 22px; }
+      #ref-input p { margin-bottom: 20px; font-size: 14px; color: #ccc; line-height: 1.5; }
+
+      #ref-input input {
+        width: 100%;
+        max-width: 300px;
+        padding: 12px;
+        font-size: 18px;
         border-radius: 10px;
-        font-size: 16px;
-        font-family: Arial, sans-serif;
-        z-index: 999;
+        border: none;
         text-align: center;
+        margin-bottom: 15px;
+      }
+
+      #ref-input button {
+        padding: 12px 30px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
       }
     </style>
   </head>
 
-  <body style="margin: 0; overflow: hidden;">
+  <body>
 
-    <!-- UI Display -->
-    <div id="status-display">Point both markers at the camera</div>
-    <div id="measurement-display">Distance: -- cm</div>
+    <!-- Reference Input Screen -->
+    <div id="ref-input">
+      <h2>📏 COSTruct AR</h2>
+      <p>
+        Para sa accurate na measurement, kailangan ng reference distance.<br><br>
+        Ilagay ang isang object na alam mo ang sukat (halimbawa: 30cm na ruler, credit card = 8.56cm).
+        <br><br>
+        Kapag nag-start na, i-aim ang crosshair sa dalawang dulo ng reference object, tapos i-tap ang "Place Point".
+      </p>
+      <input
+        type="number"
+        id="ref-distance-input"
+        placeholder="Reference distance (cm)"
+        value="30"
+      />
+      <button onclick="startAR()">Start AR</button>
+    </div>
 
+    <!-- Crosshair -->
+    <div id="crosshair"></div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">Aim the crosshair at a point and tap Place Point</div>
+
+    <!-- Measurement Display -->
+    <div id="measurement-box">
+      <div class="distance" id="distance-display">--</div>
+      <div class="area" id="area-display"></div>
+    </div>
+
+    <!-- Points List -->
+    <div id="points-list" id="points-list">
+      <strong>Points:</strong>
+      <div id="points-content"></div>
+    </div>
+
+    <!-- Buttons -->
+    <div id="button-container">
+      <button class="btn" id="btn-place" onclick="placePoint()">📍 Place Point</button>
+      <button class="btn" id="btn-undo" onclick="undoPoint()">↩ Undo</button>
+      <button class="btn" id="btn-area" onclick="computeArea()">📐 Get Area</button>
+      <button class="btn" id="btn-clear" onclick="clearAll()">🗑 Clear</button>
+    </div>
+
+    <!-- AR Scene -->
     <a-scene
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;"
       vr-mode-ui="enabled: false"
-      renderer="logarithmicDepthBuffer: true;"
+      renderer="logarithmicDepthBuffer: true; antialias: true;"
+      id="ar-scene"
     >
-
-      <!-- Marker 1 - HIRO -->
-      <a-marker
-        preset="hiro"
-        id="marker1"
-      >
-        <a-sphere
-          position="0 0 0"
-          radius="0.3"
-          color="red"
-        ></a-sphere>
+      <!-- Reference Marker - Hiro -->
+      <a-marker preset="hiro" id="ref-marker">
+        <a-box
+          position="0 0.05 0"
+          scale="0.5 0.1 0.5"
+          color="#FFD700"
+          opacity="0.8"
+        ></a-box>
         <a-text
-          value="Point A"
-          position="0 0.5 0"
+          value="REF"
+          position="0 0.2 0"
           align="center"
           color="white"
-          scale="2 2 2"
-        ></a-text>
-      </a-marker>
-
-      <!-- Marker 2 - KANJI -->
-      <a-marker
-        preset="kanji"
-        id="marker2"
-      >
-        <a-sphere
-          position="0 0 0"
-          radius="0.3"
-          color="blue"
-        ></a-sphere>
-        <a-text
-          value="Point B"
-          position="0 0.5 0"
-          align="center"
-          color="white"
-          scale="2 2 2"
+          scale="1.5 1.5 1.5"
         ></a-text>
       </a-marker>
 
@@ -94,74 +256,256 @@
     </a-scene>
 
     <script>
-      // Kunin ang markers
-      const marker1 = document.getElementById('marker1');
-      const marker2 = document.getElementById('marker2');
-      const measurementDisplay = document.getElementById('measurement-display');
-      const statusDisplay = document.getElementById('status-display');
+      let points = [];
+      let refDistance = 30; // default 30cm
+      let refPixelDistance = null;
+      let refSet = false;
+      let placingRef = true;
+      let refPoint1 = null;
 
-      // Track kung visible ang markers
-      let marker1Visible = false;
-      let marker2Visible = false;
+      const statusBar = document.getElementById('status-bar');
+      const measurementBox = document.getElementById('measurement-box');
+      const distanceDisplay = document.getElementById('distance-display');
+      const areaDisplay = document.getElementById('area-display');
+      const pointsList = document.getElementById('points-list');
+      const pointsContent = document.getElementById('points-content');
+      const btnArea = document.getElementById('btn-area');
 
-      // I-update ang status kapag nakita o nawala ang marker
-      marker1.addEventListener('markerFound', () => {
-        marker1Visible = true;
-        updateStatus();
-      });
+      function startAR() {
+        refDistance = parseFloat(document.getElementById('ref-distance-input').value) || 30;
+        document.getElementById('ref-input').style.display = 'none';
+        statusBar.textContent = 'Step 1: Aim at START of reference object → Place Point';
+      }
 
-      marker1.addEventListener('markerLost', () => {
-        marker1Visible = false;
-        updateStatus();
-      });
+      function getScreenCenter() {
+        return {
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2
+        };
+      }
 
-      marker2.addEventListener('markerFound', () => {
-        marker2Visible = true;
-        updateStatus();
-      });
+      function placePoint() {
+        const center = getScreenCenter();
 
-      marker2.addEventListener('markerLost', () => {
-        marker2Visible = false;
-        updateStatus();
-      });
+        if (placingRef && !refPoint1) {
+          // First reference point
+          refPoint1 = { x: center.x, y: center.y };
+          statusBar.textContent = 'Step 2: Aim at END of reference object → Place Point';
+          addDotOnScreen(center.x, center.y, '#FFD700', 'REF-A');
 
-      function updateStatus() {
-        if (marker1Visible && marker2Visible) {
-          statusDisplay.textContent = 'Both markers detected! Computing distance...';
-        } else if (marker1Visible) {
-          statusDisplay.textContent = 'Point A detected. Show Point B marker.';
-        } else if (marker2Visible) {
-          statusDisplay.textContent = 'Point B detected. Show Point A marker.';
+        } else if (placingRef && refPoint1) {
+          // Second reference point - compute pixel scale
+          const refPoint2 = { x: center.x, y: center.y };
+          refPixelDistance = Math.sqrt(
+            Math.pow(refPoint2.x - refPoint1.x, 2) +
+            Math.pow(refPoint2.y - refPoint1.y, 2)
+          );
+
+          if (refPixelDistance < 10) {
+            statusBar.textContent = '⚠️ Points too close! Move camera to show more of reference object.';
+            return;
+          }
+
+          refSet = true;
+          placingRef = false;
+          addDotOnScreen(center.x, center.y, '#FFD700', 'REF-B');
+
+          // pixels per cm
+          const pxPerCm = refPixelDistance / refDistance;
+          statusBar.textContent = `✅ Reference set! (${refDistance}cm = ${refPixelDistance.toFixed(0)}px) Now place measurement points.`;
+
+          setTimeout(() => {
+            statusBar.textContent = 'Aim crosshair → tap Place Point to measure';
+          }, 2500);
+
+        } else if (refSet) {
+          // Actual measurement points
+          const newPoint = { x: center.x, y: center.y };
+          points.push(newPoint);
+
+          const pointLabel = String.fromCharCode(64 + points.length); // A, B, C...
+          addDotOnScreen(center.x, center.y, '#4CAF50', pointLabel);
+
+          updatePointsList();
+
+          if (points.length >= 2) {
+            computeDistances();
+            measurementBox.style.display = 'block';
+          }
+
+          if (points.length >= 3) {
+            btnArea.style.display = 'block';
+          }
+
+          statusBar.textContent = `Point ${pointLabel} placed. Total: ${points.length} point(s)`;
         } else {
-          statusDisplay.textContent = 'Point both markers at the camera';
+          statusBar.textContent = '⚠️ Set reference distance first!';
         }
       }
 
-      // Compute distance every 500ms
-      setInterval(() => {
-        if (marker1Visible && marker2Visible) {
-          // Kunin ang world position ng bawat marker
-          const pos1 = marker1.object3D.position;
-          const pos2 = marker2.object3D.position;
+      function addDotOnScreen(x, y, color, label) {
+        const dot = document.createElement('div');
+        dot.style.cssText = `
+          position: fixed;
+          left: ${x - 10}px;
+          top: ${y - 10}px;
+          width: 20px;
+          height: 20px;
+          background: ${color};
+          border-radius: 50%;
+          border: 2px solid white;
+          z-index: 998;
+          pointer-events: none;
+        `;
 
-          // Compute distance in 3D space
-          const dx = pos1.x - pos2.x;
-          const dy = pos1.y - pos2.y;
-          const dz = pos1.z - pos2.z;
+        const labelEl = document.createElement('div');
+        labelEl.style.cssText = `
+          position: fixed;
+          left: ${x + 12}px;
+          top: ${y - 8}px;
+          color: white;
+          font-size: 14px;
+          font-weight: bold;
+          z-index: 998;
+          pointer-events: none;
+          text-shadow: 1px 1px 2px black;
+        `;
+        labelEl.textContent = label;
 
-          const distanceInUnits = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        document.body.appendChild(dot);
+        document.body.appendChild(labelEl);
 
-          // AR.js scale — 1 unit = approximately 10cm
-          // Pwede i-adjust depende sa actual testing
-          const distanceInCm = (distanceInUnits * 10).toFixed(2);
-          const distanceInM = (distanceInCm / 100).toFixed(2);
-
-          measurementDisplay.innerHTML = `
-            Distance: <strong>${distanceInCm} cm</strong> 
-            (${distanceInM} m)
-          `;
+        // Store reference to dot for undo
+        if (color === '#4CAF50') {
+          if (!points[points.length - 1]) return;
+          points[points.length - 1].dot = dot;
+          points[points.length - 1].labelEl = labelEl;
         }
-      }, 500);
+      }
+
+      function computeDistances() {
+        if (points.length < 2 || !refSet) return;
+
+        const pxPerCm = refPixelDistance / refDistance;
+        let totalDistance = 0;
+        let result = '';
+
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const labelA = String.fromCharCode(65 + i);
+          const labelB = String.fromCharCode(65 + i + 1);
+
+          const pxDist = Math.sqrt(
+            Math.pow(p2.x - p1.x, 2) +
+            Math.pow(p2.y - p1.y, 2)
+          );
+
+          const cmDist = pxDist / pxPerCm;
+          const mDist = (cmDist / 100).toFixed(2);
+          totalDistance += cmDist;
+
+          result += `${labelA}→${labelB}: ${cmDist.toFixed(1)}cm (${mDist}m)\n`;
+        }
+
+        if (points.length > 2) {
+          distanceDisplay.innerHTML = `Total: ${totalDistance.toFixed(1)} cm<br><small style="font-size:16px">${(totalDistance/100).toFixed(2)} m</small>`;
+        } else {
+          const p1 = points[0];
+          const p2 = points[1];
+          const pxDist = Math.sqrt(
+            Math.pow(p2.x - p1.x, 2) +
+            Math.pow(p2.y - p1.y, 2)
+          );
+          const cmDist = pxDist / pxPerCm;
+          distanceDisplay.innerHTML = `${cmDist.toFixed(1)} cm<br><small style="font-size:16px">${(cmDist/100).toFixed(2)} m</small>`;
+        }
+
+        areaDisplay.textContent = '';
+      }
+
+      function computeArea() {
+        if (points.length < 3 || !refSet) return;
+
+        const pxPerCm = refPixelDistance / refDistance;
+
+        // Shoelace formula for polygon area
+        let area = 0;
+        const n = points.length;
+
+        for (let i = 0; i < n; i++) {
+          const j = (i + 1) % n;
+          area += points[i].x * points[j].y;
+          area -= points[j].x * points[i].y;
+        }
+
+        area = Math.abs(area) / 2;
+
+        // Convert from pixels squared to cm squared
+        const areaCm2 = area / (pxPerCm * pxPerCm);
+        const areaM2 = (areaCm2 / 10000).toFixed(2);
+
+        areaDisplay.textContent = `Area: ${areaCm2.toFixed(1)} cm² (${areaM2} m²)`;
+        measurementBox.style.display = 'block';
+        statusBar.textContent = `Area computed: ${areaM2} m²`;
+      }
+
+      function undoPoint() {
+        if (points.length === 0) {
+          statusBar.textContent = 'No points to undo.';
+          return;
+        }
+
+        const last = points.pop();
+        if (last.dot) last.dot.remove();
+        if (last.labelEl) last.labelEl.remove();
+
+        updatePointsList();
+
+        if (points.length < 2) {
+          measurementBox.style.display = 'none';
+        }
+
+        if (points.length < 3) {
+          btnArea.style.display = 'none';
+          areaDisplay.textContent = '';
+        }
+
+        if (points.length >= 2) {
+          computeDistances();
+        }
+
+        statusBar.textContent = `Point removed. ${points.length} point(s) remaining.`;
+      }
+
+      function clearAll() {
+        // Remove all dots and labels
+        points.forEach(p => {
+          if (p.dot) p.dot.remove();
+          if (p.labelEl) p.labelEl.remove();
+        });
+
+        points = [];
+        measurementBox.style.display = 'none';
+        btnArea.style.display = 'none';
+        areaDisplay.textContent = '';
+        distanceDisplay.textContent = '--';
+        updatePointsList();
+        statusBar.textContent = 'Cleared. Place new points.';
+      }
+
+      function updatePointsList() {
+        if (points.length === 0) {
+          pointsList.style.display = 'none';
+          return;
+        }
+
+        pointsList.style.display = 'block';
+        pointsContent.innerHTML = points.map((p, i) => {
+          const label = String.fromCharCode(65 + i);
+          return `<div>${label}: (${Math.round(p.x)}, ${Math.round(p.y)})</div>`;
+        }).join('');
+      }
     </script>
 
   </body>
