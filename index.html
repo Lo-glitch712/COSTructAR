@@ -3,28 +3,163 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>COSTruct AR - Test</title>
+    <title>COSTruct AR - Measurement</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <style>
+      #measurement-display {
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 10px;
+        font-size: 20px;
+        font-family: Arial, sans-serif;
+        z-index: 999;
+        text-align: center;
+      }
+
+      #status-display {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-family: Arial, sans-serif;
+        z-index: 999;
+        text-align: center;
+      }
+    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
+
+    <!-- UI Display -->
+    <div id="status-display">Point both markers at the camera</div>
+    <div id="measurement-display">Distance: -- cm</div>
+
     <a-scene
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;"
       vr-mode-ui="enabled: false"
       renderer="logarithmicDepthBuffer: true;"
     >
-      <!-- Kapag nakita ang Hiro marker, lalabas ang red box -->
-      <a-marker preset="hiro">
-        <a-box
+
+      <!-- Marker 1 - HIRO -->
+      <a-marker
+        preset="hiro"
+        id="marker1"
+      >
+        <a-sphere
+          position="0 0 0"
+          radius="0.3"
+          color="red"
+        ></a-sphere>
+        <a-text
+          value="Point A"
           position="0 0.5 0"
-          material="color: red;"
-          scale="1 1 1"
-        ></a-box>
+          align="center"
+          color="white"
+          scale="2 2 2"
+        ></a-text>
+      </a-marker>
+
+      <!-- Marker 2 - KANJI -->
+      <a-marker
+        preset="kanji"
+        id="marker2"
+      >
+        <a-sphere
+          position="0 0 0"
+          radius="0.3"
+          color="blue"
+        ></a-sphere>
+        <a-text
+          value="Point B"
+          position="0 0.5 0"
+          align="center"
+          color="white"
+          scale="2 2 2"
+        ></a-text>
       </a-marker>
 
       <a-entity camera></a-entity>
     </a-scene>
-  </body>
-</html>
+
+    <script>
+      // Kunin ang markers
+      const marker1 = document.getElementById('marker1');
+      const marker2 = document.getElementById('marker2');
+      const measurementDisplay = document.getElementById('measurement-display');
+      const statusDisplay = document.getElementById('status-display');
+
+      // Track kung visible ang markers
+      let marker1Visible = false;
+      let marker2Visible = false;
+
+      // I-update ang status kapag nakita o nawala ang marker
+      marker1.addEventListener('markerFound', () => {
+        marker1Visible = true;
+        updateStatus();
+      });
+
+      marker1.addEventListener('markerLost', () => {
+        marker1Visible = false;
+        updateStatus();
+      });
+
+      marker2.addEventListener('markerFound', () => {
+        marker2Visible = true;
+        updateStatus();
+      });
+
+      marker2.addEventListener('markerLost', () => {
+        marker2Visible = false;
+        updateStatus();
+      });
+
+      function updateStatus() {
+        if (marker1Visible && marker2Visible) {
+          statusDisplay.textContent = 'Both markers detected! Computing distance...';
+        } else if (marker1Visible) {
+          statusDisplay.textContent = 'Point A detected. Show Point B marker.';
+        } else if (marker2Visible) {
+          statusDisplay.textContent = 'Point B detected. Show Point A marker.';
+        } else {
+          statusDisplay.textContent = 'Point both markers at the camera';
+        }
+      }
+
+      // Compute distance every 500ms
+      setInterval(() => {
+        if (marker1Visible && marker2Visible) {
+          // Kunin ang world position ng bawat marker
+          const pos1 = marker1.object3D.position;
+          const pos2 = marker2.object3D.position;
+
+          // Compute distance in 3D space
+          const dx = pos1.x - pos2.x;
+          const dy = pos1.y - pos2.y;
+          const dz = pos1.z - pos2.z;
+
+          const distanceInUnits = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          // AR.js scale — 1 unit = approximately 10cm
+          // Pwede i-adjust depende sa actual testing
+          const distanceInCm = (distanceInUnits * 10).toFixed(2);
+          const distanceInM = (distanceInCm / 100).toFixed(2);
+
+          measurementDisplay.innerHTML = `
+            Distance: <strong>${distanceInCm} cm</strong> 
+            (${distanceInM} m)
+          `;
+        }
+      }, 500);
+    </script>
