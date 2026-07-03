@@ -4,11 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>COSTruct AR - Measurement</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { overflow: hidden; font-family: Arial, sans-serif; }
+      body { 
+        overflow: hidden; 
+        font-family: Arial, sans-serif;
+        background: #000;
+      }
+
+      #camera-feed {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        z-index: 1;
+      }
+
+      #canvas-overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 2;
+        pointer-events: none;
+      }
 
       #status-bar {
         position: fixed;
@@ -28,12 +46,12 @@
 
       #measurement-box {
         position: fixed;
-        bottom: 120px;
+        bottom: 130px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(0,0,0,0.75);
+        background: rgba(0,0,0,0.85);
         color: white;
-        padding: 12px 20px;
+        padding: 15px 25px;
         border-radius: 15px;
         font-size: 16px;
         text-align: center;
@@ -43,16 +61,23 @@
         display: none;
       }
 
-      #measurement-box .distance {
-        font-size: 28px;
+      .distance {
+        font-size: 32px;
         font-weight: bold;
         color: #4CAF50;
       }
 
-      #measurement-box .area {
+      .area {
         font-size: 20px;
         color: #2196F3;
-        margin-top: 5px;
+        margin-top: 8px;
+      }
+
+      .segment-list {
+        font-size: 13px;
+        color: #ccc;
+        margin-top: 8px;
+        text-align: left;
       }
 
       #button-container {
@@ -61,18 +86,17 @@
         left: 50%;
         transform: translateX(-50%);
         display: flex;
-        gap: 10px;
+        gap: 8px;
         z-index: 1000;
         width: 90%;
         max-width: 400px;
-        justify-content: center;
       }
 
       .btn {
-        padding: 12px 20px;
+        padding: 12px 10px;
         border: none;
         border-radius: 25px;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: bold;
         cursor: pointer;
         flex: 1;
@@ -80,315 +104,510 @@
 
       #btn-place { background: #4CAF50; color: white; }
       #btn-undo { background: #FF9800; color: white; }
-      #btn-clear { background: #f44336; color: white; }
       #btn-area { background: #2196F3; color: white; display: none; }
+      #btn-clear { background: #f44336; color: white; }
 
       #crosshair {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 40px;
-        height: 40px;
-        z-index: 1000;
+        z-index: 999;
         pointer-events: none;
       }
 
-      #crosshair::before,
-      #crosshair::after {
-        content: '';
-        position: absolute;
-        background: white;
+      #crosshair svg {
+        width: 50px;
+        height: 50px;
       }
 
-      #crosshair::before {
-        width: 2px;
-        height: 100%;
-        left: 50%;
-        transform: translateX(-50%);
+      #ref-screen {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.92);
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        padding: 30px;
+        text-align: center;
       }
 
-      #crosshair::after {
+      #ref-screen h2 { 
+        font-size: 24px; 
+        margin-bottom: 10px;
+        color: #4CAF50;
+      }
+
+      #ref-screen p { 
+        font-size: 14px; 
+        color: #ccc; 
+        margin-bottom: 20px;
+        line-height: 1.6;
+      }
+
+      #ref-screen input {
         width: 100%;
-        height: 2px;
-        top: 50%;
-        transform: translateY(-50%);
+        max-width: 280px;
+        padding: 14px;
+        font-size: 20px;
+        border-radius: 12px;
+        border: 2px solid #4CAF50;
+        text-align: center;
+        margin-bottom: 10px;
+        background: #1a1a1a;
+        color: white;
       }
 
-      .crosshair-dot {
-        position: absolute;
-        width: 6px;
-        height: 6px;
+      .ref-presets {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .preset-btn {
+        padding: 8px 14px;
+        background: #333;
+        color: white;
+        border: 1px solid #555;
+        border-radius: 20px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .preset-btn:hover {
         background: #4CAF50;
-        border-radius: 50%;
+        border-color: #4CAF50;
+      }
+
+      #start-btn {
+        padding: 14px 40px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        max-width: 280px;
+      }
+
+      #gyro-info {
+        position: fixed;
+        top: 65px;
+        right: 10px;
+        background: rgba(0,0,0,0.6);
+        color: #aaa;
+        padding: 8px 12px;
+        border-radius: 10px;
+        font-size: 11px;
+        z-index: 1000;
+        text-align: right;
+      }
+
+      #permission-btn {
+        position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-      }
-
-      #marker-status {
-        position: fixed;
-        top: 65px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(244, 67, 54, 0.85);
+        padding: 15px 30px;
+        background: #2196F3;
         color: white;
-        padding: 8px 16px;
-        border-radius: 15px;
-        font-size: 13px;
-        z-index: 1000;
-        text-align: center;
-        width: 90%;
-        max-width: 400px;
-      }
-
-      #marker-status.detected {
-        background: rgba(76, 175, 80, 0.85);
+        border: none;
+        border-radius: 30px;
+        font-size: 16px;
+        z-index: 4000;
+        display: none;
+        cursor: pointer;
       }
     </style>
   </head>
 
   <body>
 
+    <!-- Reference Setup Screen -->
+    <div id="ref-screen">
+      <h2>📏 COSTruct AR</h2>
+      <p>
+        Gyroscope-based measurement.<br>
+        Mag-input ng reference height ng phone mo<br>
+        mula sa floor habang nagme-measure ng floor area.<br><br>
+        O kaya mag-input ng estimated distance<br>
+        para sa wall measurement.
+      </p>
+
+      <input 
+        type="number" 
+        id="ref-height-input" 
+        value="120" 
+        placeholder="Phone height (cm)"
+      />
+
+      <div class="ref-presets">
+        <button class="preset-btn" onclick="setPreset(80)">80cm</button>
+        <button class="preset-btn" onclick="setPreset(100)">100cm</button>
+        <button class="preset-btn" onclick="setPreset(120)">120cm (default)</button>
+        <button class="preset-btn" onclick="setPreset(150)">150cm</button>
+      </div>
+
+      <button id="start-btn" onclick="startMeasurement()">
+        Start Measuring
+      </button>
+    </div>
+
+    <!-- iOS Permission Button -->
+    <button id="permission-btn" onclick="requestGyroPermission()">
+      Allow Motion Sensors
+    </button>
+
+    <!-- Camera Feed -->
+    <video id="camera-feed" autoplay playsinline muted></video>
+
+    <!-- Canvas for drawing points and lines -->
+    <canvas id="canvas-overlay"></canvas>
+
     <!-- Crosshair -->
     <div id="crosshair">
-      <div class="crosshair-dot"></div>
+      <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="25" cy="25" r="3" fill="#4CAF50"/>
+        <line x1="25" y1="5" x2="25" y2="18" stroke="white" stroke-width="2"/>
+        <line x1="25" y1="32" x2="25" y2="45" stroke="white" stroke-width="2"/>
+        <line x1="5" y1="25" x2="18" y2="25" stroke="white" stroke-width="2"/>
+        <line x1="32" y1="25" x2="45" y2="25" stroke="white" stroke-width="2"/>
+        <circle cx="25" cy="25" r="8" stroke="#4CAF50" stroke-width="1.5" stroke-dasharray="3 3"/>
+      </svg>
     </div>
 
-    <!-- Status Bar -->
-    <div id="status-bar">
-      Show the HIRO marker to the camera first
-    </div>
+    <!-- Status -->
+    <div id="status-bar">Initializing...</div>
 
-    <!-- Marker Status -->
-    <div id="marker-status">
-      🔴 Marker not detected
+    <!-- Gyro Info -->
+    <div id="gyro-info">
+      α: -- | β: -- | γ: --
     </div>
 
     <!-- Measurement Display -->
     <div id="measurement-box">
       <div class="distance" id="distance-display">--</div>
       <div class="area" id="area-display"></div>
+      <div class="segment-list" id="segment-list"></div>
     </div>
 
     <!-- Buttons -->
     <div id="button-container">
-      <button class="btn" id="btn-place" onclick="placePoint()" disabled>
-        📍 Place Point
-      </button>
+      <button class="btn" id="btn-place" onclick="placePoint()">📍 Place</button>
       <button class="btn" id="btn-undo" onclick="undoPoint()">↩ Undo</button>
       <button class="btn" id="btn-area" onclick="computeArea()">📐 Area</button>
       <button class="btn" id="btn-clear" onclick="clearAll()">🗑 Clear</button>
     </div>
 
-    <!-- AR Scene -->
-    <a-scene
-      embedded
-      arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
-      vr-mode-ui="enabled: false"
-      renderer="logarithmicDepthBuffer: true; antialias: true;"
-      id="ar-scene"
-    >
-
-      <!-- Hiro Marker as scale reference -->
-      <!-- Hiro marker real size = 8cm x 8cm -->
-      <a-marker
-        preset="hiro"
-        id="hiro-marker"
-        size="0.08"
-      >
-        <!-- Visual indicator na na-detect ang marker -->
-        <a-ring
-          position="0 0 0"
-          rotation="-90 0 0"
-          radius-inner="0.4"
-          radius-outer="0.5"
-          color="#4CAF50"
-          opacity="0.8"
-        ></a-ring>
-        <a-text
-          value="SCALE REF"
-          position="0 0.1 0"
-          align="center"
-          color="white"
-          scale="0.5 0.5 0.5"
-          rotation="-90 0 0"
-        ></a-text>
-      </a-marker>
-
-      <!-- Container para sa measurement points -->
-      <a-entity id="points-container"></a-entity>
-
-      <a-entity camera></a-entity>
-    </a-scene>
-
     <script>
-      const marker = document.getElementById('hiro-marker');
-      const markerStatus = document.getElementById('marker-status');
+      // =====================
+      // VARIABLES
+      // =====================
+      let phoneHeight = 120; // cm, default
+      let alpha = 0, beta = 0, gamma = 0;
+      let points = []; // { x, y, worldX, worldZ, label }
+      let canvas, ctx;
+      let gyroAvailable = false;
+      let started = false;
+
       const statusBar = document.getElementById('status-bar');
       const measurementBox = document.getElementById('measurement-box');
       const distanceDisplay = document.getElementById('distance-display');
       const areaDisplay = document.getElementById('area-display');
-      const btnPlace = document.getElementById('btn-place');
+      const segmentList = document.getElementById('segment-list');
       const btnArea = document.getElementById('btn-area');
-      const pointsContainer = document.getElementById('points-container');
-      const scene = document.getElementById('ar-scene');
-
-      let markerDetected = false;
-      let points3D = [];
-      let pointEntities = [];
-      let lineEntities = [];
+      const gyroInfo = document.getElementById('gyro-info');
 
       // =====================
-      // MARKER DETECTION
+      // PRESET
       // =====================
-      marker.addEventListener('markerFound', () => {
-        markerDetected = true;
-        markerStatus.textContent = '🟢 Marker detected — Ready to measure!';
-        markerStatus.classList.add('detected');
-        btnPlace.disabled = false;
-        statusBar.textContent = 'Aim crosshair at a point → tap Place Point';
-      });
+      function setPreset(val) {
+        document.getElementById('ref-height-input').value = val;
+      }
 
-      marker.addEventListener('markerLost', () => {
-        markerDetected = false;
-        markerStatus.textContent = '🔴 Marker lost — Show marker again';
-        markerStatus.classList.remove('detected');
-        statusBar.textContent = 'Show HIRO marker to continue measuring';
-      });
+      // =====================
+      // START
+      // =====================
+      async function startMeasurement() {
+        phoneHeight = parseFloat(document.getElementById('ref-height-input').value) || 120;
+        document.getElementById('ref-screen').style.display = 'none';
+
+        // Start camera
+        await startCamera();
+
+        // Setup canvas
+        setupCanvas();
+
+        // Request gyro
+        if (typeof DeviceOrientationEvent !== 'undefined' && 
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          // iOS 13+
+          document.getElementById('permission-btn').style.display = 'block';
+        } else {
+          // Android
+          startGyro();
+        }
+
+        started = true;
+        statusBar.textContent = 'Move phone to measure. Tap Place to set points.';
+      }
+
+      // =====================
+      // IOS PERMISSION
+      // =====================
+      async function requestGyroPermission() {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === 'granted') {
+            startGyro();
+            document.getElementById('permission-btn').style.display = 'none';
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // =====================
+      // CAMERA
+      // =====================
+      async function startCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              facingMode: 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          });
+          document.getElementById('camera-feed').srcObject = stream;
+        } catch (e) {
+          statusBar.textContent = 'Camera error: ' + e.message;
+        }
+      }
+
+      // =====================
+      // CANVAS SETUP
+      // =====================
+      function setupCanvas() {
+        canvas = document.getElementById('canvas-overlay');
+        ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        window.addEventListener('resize', () => {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          redrawCanvas();
+        });
+      }
+
+      // =====================
+      // GYROSCOPE
+      // =====================
+      function startGyro() {
+        window.addEventListener('deviceorientation', (e) => {
+          alpha = e.alpha || 0; // Z axis rotation (compass)
+          beta = e.beta || 0;   // X axis (front-back tilt)
+          gamma = e.gamma || 0; // Y axis (left-right tilt)
+
+          gyroInfo.textContent = `α:${Math.round(alpha)}° β:${Math.round(beta)}° γ:${Math.round(gamma)}°`;
+          gyroAvailable = true;
+        });
+      }
+
+      // =====================
+      // COMPUTE WORLD POSITION
+      // =====================
+      function getWorldPosition() {
+        // Convert gyro angles to radians
+        const betaRad = beta * Math.PI / 180;
+        const alphaRad = alpha * Math.PI / 180;
+
+        // Distance from phone to floor based on tilt angle
+        // When phone is pointing down (beta = 90), distance = phone height
+        // When phone is pointing forward (beta = 0), distance = infinity
+        
+        let distance;
+        
+        if (Math.abs(beta) > 10) {
+          // Floor measurement
+          distance = phoneHeight / Math.sin(Math.abs(betaRad));
+          distance = Math.min(distance, 1000); // cap at 10 meters
+        } else {
+          // Wall measurement - use fixed estimated distance
+          distance = phoneHeight;
+        }
+
+        // Convert to X, Z world coordinates using compass heading
+        const worldX = distance * Math.sin(alphaRad);
+        const worldZ = distance * Math.cos(alphaRad);
+
+        return { 
+          distance: distance,
+          worldX: worldX, 
+          worldZ: worldZ,
+          beta: beta
+        };
+      }
 
       // =====================
       // PLACE POINT
       // =====================
       function placePoint() {
-        if (!markerDetected) {
-          statusBar.textContent = '⚠️ Show the HIRO marker first!';
-          return;
-        }
+        if (!started) return;
 
-        // Kukunin ang world position ng marker
-        const markerObj = marker.object3D;
-        const markerPos = new THREE.Vector3();
-        markerObj.getWorldPosition(markerPos);
+        const screenX = window.innerWidth / 2;
+        const screenY = window.innerHeight / 2;
 
-        // Kukunin ang camera
-        const camera = document.querySelector('[camera]');
-        const cameraObj = camera.object3D;
-        const cameraPos = new THREE.Vector3();
-        cameraObj.getWorldPosition(cameraPos);
+        let worldPos;
 
-        // Ray from camera center (crosshair) into scene
-        const cameraDir = new THREE.Vector3();
-        cameraObj.getWorldDirection(cameraDir);
-
-        // Project onto estimated ground plane (y = marker y)
-        const targetY = markerPos.y;
-        const t = (targetY - cameraPos.y) / cameraDir.y;
-
-        let pointPos;
-
-        if (t > 0 && isFinite(t)) {
-          // Floor measurement
-          pointPos = new THREE.Vector3(
-            cameraPos.x + cameraDir.x * t,
-            targetY,
-            cameraPos.z + cameraDir.z * t
-          );
+        if (gyroAvailable) {
+          worldPos = getWorldPosition();
         } else {
-          // Wall measurement — project forward
-          const distance = 1.5; // assume 1.5 units forward
-          pointPos = new THREE.Vector3(
-            cameraPos.x + cameraDir.x * distance,
-            cameraPos.y + cameraDir.y * distance,
-            cameraPos.z + cameraDir.z * distance
-          );
+          // Fallback if no gyro
+          worldPos = {
+            distance: phoneHeight,
+            worldX: points.length * 50,
+            worldZ: 0,
+            beta: 45
+          };
+          statusBar.textContent = '⚠️ No gyro detected. Using fallback mode.';
         }
 
-        points3D.push(pointPos.clone());
+        const label = String.fromCharCode(65 + points.length);
 
-        // Add visual dot sa scene
-        const sphere = document.createElement('a-sphere');
-        sphere.setAttribute('position', `${pointPos.x} ${pointPos.y} ${pointPos.z}`);
-        sphere.setAttribute('radius', '0.03');
-        sphere.setAttribute('color', '#4CAF50');
-        scene.appendChild(sphere);
-        pointEntities.push(sphere);
+        points.push({
+          screenX: screenX,
+          screenY: screenY,
+          worldX: worldPos.worldX,
+          worldZ: worldPos.worldZ,
+          distance: worldPos.distance,
+          label: label
+        });
 
-        // Add label
-        const label = document.createElement('a-text');
-        const pointLabel = String.fromCharCode(64 + points3D.length);
-        label.setAttribute('value', pointLabel);
-        label.setAttribute('position', `${pointPos.x} ${pointPos.y + 0.08} ${pointPos.z}`);
-        label.setAttribute('align', 'center');
-        label.setAttribute('color', 'white');
-        label.setAttribute('scale', '0.3 0.3 0.3');
-        label.setAttribute('look-at', '[camera]');
-        scene.appendChild(label);
-        pointEntities.push(label);
+        redrawCanvas();
 
-        // Draw line between points
-        if (points3D.length >= 2) {
-          const prev = points3D[points3D.length - 2];
-          const curr = points3D[points3D.length - 1];
-          drawLine(prev, curr);
+        if (points.length >= 2) {
           computeDistances();
           measurementBox.style.display = 'block';
         }
 
-        if (points3D.length >= 3) {
+        if (points.length >= 3) {
           btnArea.style.display = 'block';
         }
 
-        statusBar.textContent = `Point ${String.fromCharCode(64 + points3D.length)} placed. Total: ${points3D.length}`;
+        statusBar.textContent = `Point ${label} placed. Distance: ${worldPos.distance.toFixed(0)}cm`;
       }
 
       // =====================
-      // DRAW LINE
+      // REDRAW CANVAS
       // =====================
-      function drawLine(p1, p2) {
-        const midX = (p1.x + p2.x) / 2;
-        const midY = (p1.y + p2.y) / 2;
-        const midZ = (p1.z + p2.z) / 2;
+      function redrawCanvas() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const dz = p2.z - p1.z;
-        const length = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        // Draw lines between points
+        if (points.length >= 2) {
+          ctx.strokeStyle = '#FFD700';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([10, 5]);
+          ctx.beginPath();
+          ctx.moveTo(points[0].screenX, points[0].screenY);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].screenX, points[i].screenY);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
 
-        const line = document.createElement('a-cylinder');
-        line.setAttribute('position', `${midX} ${midY} ${midZ}`);
-        line.setAttribute('height', length);
-        line.setAttribute('radius', '0.008');
-        line.setAttribute('color', '#FFD700');
-        line.setAttribute('look-at', `${p2.x} ${p2.y} ${p2.z}`);
-        scene.appendChild(line);
-        lineEntities.push(line);
+        // Draw points
+        points.forEach((p, i) => {
+          // Outer ring
+          ctx.beginPath();
+          ctx.arc(p.screenX, p.screenY, 14, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
+          ctx.fill();
+
+          // Inner dot
+          ctx.beginPath();
+          ctx.arc(p.screenX, p.screenY, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#4CAF50';
+          ctx.fill();
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Label
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 14px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(p.label, p.screenX, p.screenY - 18);
+        });
+
+        // Draw distance labels on lines
+        if (points.length >= 2) {
+          const scale = 1; // 1cm = 1cm
+          for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
+
+            const dx = p2.worldX - p1.worldX;
+            const dz = p2.worldZ - p1.worldZ;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+
+            const midX = (p1.screenX + p2.screenX) / 2;
+            const midY = (p1.screenY + p2.screenY) / 2;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.beginPath();
+            ctx.roundRect(midX - 35, midY - 12, 70, 24, 5);
+            ctx.fill();
+
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${dist.toFixed(1)}cm`, midX, midY + 4);
+          }
+        }
       }
 
       // =====================
       // COMPUTE DISTANCES
       // =====================
       function computeDistances() {
-        if (points3D.length < 2) return;
-
-        // AR.js scale: 1 unit = 10cm (based on hiro marker size)
-        const scale = 10;
+        if (points.length < 2) return;
 
         let totalCm = 0;
+        let segments = '';
 
-        for (let i = 0; i < points3D.length - 1; i++) {
-          const p1 = points3D[i];
-          const p2 = points3D[i + 1];
-          const dist = p1.distanceTo(p2) * scale;
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const dx = p2.worldX - p1.worldX;
+          const dz = p2.worldZ - p1.worldZ;
+          const dist = Math.sqrt(dx*dx + dz*dz);
           totalCm += dist;
+
+          const labelA = points[i].label;
+          const labelB = points[i+1].label;
+          segments += `${labelA}→${labelB}: ${dist.toFixed(1)}cm (${(dist/100).toFixed(2)}m)\n`;
         }
 
-        const totalM = (totalCm / 100).toFixed(2);
+        if (points.length === 2) {
+          const p1 = points[0];
+          const p2 = points[1];
+          const dx = p2.worldX - p1.worldX;
+          const dz = p2.worldZ - p1.worldZ;
+          const dist = Math.sqrt(dx*dx + dz*dz);
 
-        if (points3D.length === 2) {
-          const p1 = points3D[0];
-          const p2 = points3D[1];
-          const dist = p1.distanceTo(p2) * scale;
           distanceDisplay.innerHTML = `
             ${dist.toFixed(1)} cm
             <br><small style="font-size:16px">${(dist/100).toFixed(2)} m</small>
@@ -396,10 +615,11 @@
         } else {
           distanceDisplay.innerHTML = `
             Total: ${totalCm.toFixed(1)} cm
-            <br><small style="font-size:16px">${totalM} m</small>
+            <br><small style="font-size:16px">${(totalCm/100).toFixed(2)} m</small>
           `;
         }
 
+        segmentList.textContent = segments;
         areaDisplay.textContent = '';
       }
 
@@ -407,27 +627,21 @@
       // COMPUTE AREA
       // =====================
       function computeArea() {
-        if (points3D.length < 3) return;
+        if (points.length < 3) return;
 
-        const scale = 10;
-
-        // Shoelace formula sa 3D (project to XZ plane)
         let area = 0;
-        const n = points3D.length;
+        const n = points.length;
 
         for (let i = 0; i < n; i++) {
           const j = (i + 1) % n;
-          area += points3D[i].x * points3D[j].z;
-          area -= points3D[j].x * points3D[i].z;
+          area += points[i].worldX * points[j].worldZ;
+          area -= points[j].worldX * points[i].worldZ;
         }
 
         area = Math.abs(area) / 2;
+        const areaM2 = (area / 10000).toFixed(2);
 
-        // Convert to cm squared
-        const areaCm2 = area * scale * scale;
-        const areaM2 = (areaCm2 / 10000).toFixed(2);
-
-        areaDisplay.textContent = `Area: ${areaCm2.toFixed(1)} cm² | ${areaM2} m²`;
+        areaDisplay.textContent = `Area: ${area.toFixed(1)} cm² | ${areaM2} m²`;
         statusBar.textContent = `Area: ${areaM2} m²`;
       }
 
@@ -435,50 +649,35 @@
       // UNDO
       // =====================
       function undoPoint() {
-        if (points3D.length === 0) return;
+        if (points.length === 0) return;
+        points.pop();
+        redrawCanvas();
 
-        points3D.pop();
-
-        // Remove last 2 entities (sphere + label)
-        for (let i = 0; i < 2; i++) {
-          const entity = pointEntities.pop();
-          if (entity) entity.remove();
-        }
-
-        // Remove last line
-        const line = lineEntities.pop();
-        if (line) line.remove();
-
-        if (points3D.length < 2) {
+        if (points.length < 2) {
           measurementBox.style.display = 'none';
         } else {
           computeDistances();
         }
 
-        if (points3D.length < 3) {
+        if (points.length < 3) {
           btnArea.style.display = 'none';
           areaDisplay.textContent = '';
         }
 
-        statusBar.textContent = `Undo. ${points3D.length} point(s) remaining.`;
+        statusBar.textContent = `Undo. ${points.length} point(s) remaining.`;
       }
 
       // =====================
-      // CLEAR ALL
+      // CLEAR
       // =====================
       function clearAll() {
-        points3D = [];
-
-        pointEntities.forEach(e => e.remove());
-        pointEntities = [];
-
-        lineEntities.forEach(e => e.remove());
-        lineEntities = [];
-
+        points = [];
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
         measurementBox.style.display = 'none';
         btnArea.style.display = 'none';
         areaDisplay.textContent = '';
         distanceDisplay.textContent = '--';
+        segmentList.textContent = '';
         statusBar.textContent = 'Cleared. Place new points.';
       }
     </script>
